@@ -6,7 +6,16 @@ namespace AspireGrpcService.Services
 
     public class AspireService : Aspire.V1.DashboardService.DashboardServiceBase
     {
-   
+        private readonly ILogger _logger;
+        private readonly KubernetesClientConfiguration _config;
+        private readonly Kubernetes _client;
+        public AspireService(ILogger<AspireService> logger) 
+        {
+            _logger = logger;
+            _config = KubernetesClientConfiguration.InClusterConfig();
+            _client = new Kubernetes(_config);
+        }
+
         public override Task<ApplicationInformationResponse> GetApplicationInformation(ApplicationInformationRequest request, ServerCallContext context)
         {
             // TODO - Confirm if we can use "tags" to identity Aspire Apps in ACA.
