@@ -1,0 +1,6 @@
+C:\Repos\AspireGrpcService\AspireGrpcService\obj\Debug\net8.0\AspireGrpcService.csproj.AssemblyReference.cache
+C:\Repos\AspireGrpcService\AspireGrpcService\obj\Debug\net8.0\AspireGrpcService.GeneratedMSBuildEditorConfig.editorconfig
+C:\Repos\AspireGrpcService\AspireGrpcService\obj\Debug\net8.0\AspireGrpcService.AssemblyInfoInputs.cache
+C:\Repos\AspireGrpcService\AspireGrpcService\obj\Debug\net8.0\AspireGrpcService.AssemblyInfo.cs
+C:\Repos\AspireGrpcService\AspireGrpcService\obj\Debug\net8.0\AspireGrpcService.csproj.CoreCompileInputs.cache
+C:\Repos\AspireGrpcService\AspireGrpcService\obj\Debug\net8.0\AspireGrpcService.MvcApplicationPartsAssemblyInfo.cache
