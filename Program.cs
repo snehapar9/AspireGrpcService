@@ -12,7 +12,6 @@ builder.Services.AddGrpcReflection();
 
 
 // Configure the HTTP request pipeline.
-app.MapGrpcService<GreeterService>();
 app.MapGrpcService<AspireService>();
 
 // Enable reflection in Debug mode.

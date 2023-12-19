@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AspireGrpcService")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+68f279701274ee5070eae3de7cd3ece2607d47d3")]
 [assembly: System.Reflection.AssemblyProductAttribute("AspireGrpcService")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AspireGrpcService")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

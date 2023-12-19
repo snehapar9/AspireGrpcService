@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "S3yWN4nwj017VQV3weLSlkCM9K9/7Mkpk12RYw1NqDw=",
+  "Source": "AspireGrpcService",
+  "BasePath": "_content/AspireGrpcService",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}
