@@ -9,6 +9,7 @@ namespace AspireGrpcService.Services
    
         public override Task<ApplicationInformationResponse> GetApplicationInformation(ApplicationInformationRequest request, ServerCallContext context)
         {
+            // TODO - Confirm if we can use "tags" to identity Aspire Apps in ACA.
             return base.GetApplicationInformation(request, context);
         }
 
