@@ -9,19 +9,7 @@ namespace AspireGrpcService.Services
    
         public override Task<ApplicationInformationResponse> GetApplicationInformation(ApplicationInformationRequest request, ServerCallContext context)
         {
-            // Load from the default kubeconfig on the machine.
-            var config = k8s.KubernetesClientConfiguration.InClusterConfig();
-
-            var client = new Kubernetes(config);
-
-            var pods = client.CoreV1.ListNamespacedPod("grpc-service-account");
-
-            return Task.FromResult(new ApplicationInformationResponse()
-            {
-                // Change this logic to get application name and application version
-                ApplicationName = $"{pods.Items[0].Spec.NodeName}",
-                ApplicationVersion = $"{pods.Items[0].ApiVersion}",
-            });
+            return base.GetApplicationInformation(request, context);
         }
 
         public override Task WatchResources(WatchResourcesRequest request, IServerStreamWriter<WatchResourcesUpdate> responseStream, ServerCallContext context)
