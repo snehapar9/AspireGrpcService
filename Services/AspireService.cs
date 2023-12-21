@@ -12,6 +12,7 @@ namespace AspireGrpcService.Services
         private readonly KubernetesClientConfiguration _kubernetesConfig;
         private readonly Kubernetes _kubernetesClient;
         private IServerStreamWriter<WatchResourcesUpdate>? _currentWatchResourcesUpdateStream;
+        private string? _resourceVersion;
 
         public AspireService(ILogger<AspireService> logger) 
         {
@@ -30,23 +31,8 @@ namespace AspireGrpcService.Services
         {
             _currentWatchResourcesUpdateStream = responseStream;
 
-            // Creates the watcher
-            var podsWatchResponse = _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync("k8se-apps", watch: true);
-            var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
-            {
-                Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
-                var reply = new WatchResourcesUpdate()
-                {
-                    InitialData = new InitialResourceData()
-                    {
-                        ResourceTypes = { new ResourceType() { DisplayName = $"{type} pod: {item.Metadata.Name}" } }
-                    }
-                };
-                await responseStream.WriteAsync(reply);
-            });
-
             // Gets the initial data and return it
-            var podsList = await _kubernetesClient.CoreV1.ListNamespacedPodAsync("k8se-apps");
+            var podsList = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace);
             var initialReply = new WatchResourcesUpdate()
             {
                 InitialData = new InitialResourceData()
@@ -54,11 +40,34 @@ namespace AspireGrpcService.Services
                     ResourceTypes = { new ResourceType() { DisplayName = $"Initial call. Found {podsList.Items.Count} pods" } }
                 }
             };
-
-            await responseStream.WriteAsync(initialReply);
-
+            if (string.IsNullOrEmpty(_resourceVersion))
+            {
+                _resourceVersion = podsList.Metadata.ResourceVersion;
+                await responseStream.WriteAsync(initialReply);
+            }
+            try
+            {
+                var podsWatchResponse = _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, resourceVersion:_resourceVersion, resourceVersionMatch: _resourceVersion,  watch: true);
+                var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
+                {
+                    Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
+                    var reply = new WatchResourcesUpdate()
+                    {
+                       // Populate changes from events and write to writer
+                       Changes = { }
+                    };
+                    await responseStream.WriteAsync(reply);
+                });
+            }
+            catch (Exception ex)
+            {
+                _resourceVersion = null;
+                Console.WriteLine(ex.ToString());
+                // TODO : Cancel request 
+            }
+            
             // Wait until the cancellation is requested
-            while (!context.CancellationToken.IsCancellationRequested)
+            while (!context.CancellationToken.IsCancellationRequested || !request.IsReconnect)
             {
                 await Task.Delay(TimeSpan.FromMinutes(1), context.CancellationToken).ContinueWith(task => { });
             }
