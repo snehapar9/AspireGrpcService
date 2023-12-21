@@ -42,7 +42,7 @@ namespace AspireGrpcService.Services
                         ResourceTypes = { new ResourceType() { DisplayName = $"{type} pod: {item.Metadata.Name}" } }
                     }
                 };
-                await _currentWatchResourcesUpdateStream.WriteAsync(reply);
+                await responseStream.WriteAsync(reply);
             });
 
             // Gets the initial data and return it
@@ -54,10 +54,15 @@ namespace AspireGrpcService.Services
                     ResourceTypes = { new ResourceType() { DisplayName = $"Initial call. Found {podsList.Items.Count} pods" } }
                 }
             };
-            await _currentWatchResourcesUpdateStream.WriteAsync(initialReply);
 
-            // Force wait to keep the connection open. TODO: Update
-            await new Task(() => { });
+            await responseStream.WriteAsync(initialReply);
+
+            // Wait until the cancellation is requested
+            while (!context.CancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromMinutes(1), context.CancellationToken).ContinueWith(task => { });
+            }
+            Console.WriteLine($"WatchResources connection canceled");
         }
 
         public override async Task WatchResourceConsoleLogs(WatchResourceConsoleLogsRequest request, IServerStreamWriter<WatchResourceConsoleLogsUpdate> responseStream, ServerCallContext context)
