@@ -1,4 +1,0 @@
-obj\Debug\net8.0\Protos/Aspire.cs \
-obj\Debug\net8.0\Protos/AspireGrpc.cs: C:/Users/snehapar/.nuget/packages/grpc.tools/2.57.0/build/native/include/google/protobuf/struct.proto\
- C:/Users/snehapar/.nuget/packages/grpc.tools/2.57.0/build/native/include/google/protobuf/timestamp.proto\
- Protos/aspire.proto

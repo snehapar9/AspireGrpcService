@@ -1,21 +1,22 @@
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-nanoserver-1809 AS base
+#See https://aka.ms/customizecontainer to learn how to customize your debug container and how Visual Studio uses this Dockerfile to build your images for faster debugging.
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+USER app
 WORKDIR /app
-EXPOSE 5100
+EXPOSE 50052
 
-ENV ASPNETCORE_URLS=http://+:5100
-
-FROM mcr.microsoft.com/dotnet/sdk:8.0-nanoserver-1809 AS build
-ARG configuration=Release
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["AspireGrpcService.csproj", "./"]
-RUN dotnet restore "AspireGrpcService.csproj"
+COPY ["AspireGrpcService.csproj", "."]
+RUN dotnet restore "./././AspireGrpcService.csproj"
 COPY . .
 WORKDIR "/src/."
-RUN dotnet build "AspireGrpcService.csproj" -c $configuration -o /app/build
+RUN dotnet build "./AspireGrpcService.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 FROM build AS publish
-ARG configuration=Release
-RUN dotnet publish "AspireGrpcService.csproj" -c $configuration -o /app/publish /p:UseAppHost=false
+ARG BUILD_CONFIGURATION=Release
+RUN dotnet publish "./AspireGrpcService.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app
