@@ -13,7 +13,6 @@ namespace AspireGrpcService.Services
         private readonly KubernetesClientConfiguration _kubernetesConfig;
         private readonly Kubernetes _kubernetesClient;
         private IServerStreamWriter<WatchResourcesUpdate>? _currentWatchResourcesUpdateStream;
-        private string? _resourceVersion;
 
         public AspireService(ILogger<AspireService> logger) 
         {
@@ -77,7 +76,7 @@ namespace AspireGrpcService.Services
                 Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
                 var reply = new WatchResourcesUpdate()
                 {
-                    // TODO : Figure out deletion or insert/upsert and add here.
+                    // TODO : Figure out deletion or upsert and add here.
                     Changes = new WatchResourcesChanges()
                     {
                         Value = { new WatchResourcesChange() { Delete = new ResourceDeletion() { }, Upsert = new Resource { Name = item.Metadata.Name} } }
@@ -91,8 +90,10 @@ namespace AspireGrpcService.Services
         public override async Task WatchResourceConsoleLogs(WatchResourceConsoleLogsRequest request, IServerStreamWriter<WatchResourceConsoleLogsUpdate> responseStream, ServerCallContext context)
         {
            var label = $"app={request.ResourceName}";
+            _logger.LogInformation($"Label : {label}");
            var pods = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace, labelSelector: label);
            var podName = pods.Items[0].Metadata.Name;
+            _logger.LogInformation($"PodName: {podName}");
            while(!context.CancellationToken.IsCancellationRequested)
             {
                 var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace);
