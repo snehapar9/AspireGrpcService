@@ -85,7 +85,7 @@ namespace AspireGrpcService.Services
         private async Task WatchAndWriteChangesToStream(IServerStreamWriter<WatchResourcesUpdate> responseStream)
         {
             // Creates the watcher
-            var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true, labelSelector: "containerapps.io/app-name");
+            var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true);
             var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
             {
                 Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
