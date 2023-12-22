@@ -88,6 +88,20 @@ namespace AspireGrpcService.Services
             var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true);
             var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
             {
+                var labels = item.Labels();
+                if (labels.IsNullOrEmpty())
+                {
+                    _logger.LogDebug($"Unable to fetch app name because Pod: {item.Metadata.Name} does not contain labels.Skipping to next pod.");
+                    return;        
+                }
+
+                var result = labels.TryGetValue("containerapps.io/app-name", out string appName);
+                if (!result)
+                {
+                    _logger.LogDebug($"The Pod {item.Metadata.Name} does not have an entry for the key app. Skipping to next pod.");
+                    return;
+                }
+
                 Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
                 if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified))
                 {
