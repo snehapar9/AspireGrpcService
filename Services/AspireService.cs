@@ -50,8 +50,10 @@ namespace AspireGrpcService.Services
         private async Task WriteInitialDataToStream(IServerStreamWriter<WatchResourcesUpdate> responseStream)
         {
             // Gets the initial data and return it
-
             var podsList = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace);
+            var watchResourcesUpdate = new WatchResourcesUpdate() { InitialData = new InitialResourceData() };
+            var initialData = new InitialResourceData();
+  
             foreach (var pod in podsList)
             {
                 var labels = pod.Labels();
@@ -70,16 +72,12 @@ namespace AspireGrpcService.Services
 
                 _logger.LogDebug($"App name: {appName}");
                 _logger.LogDebug($"Result: {result}");
-                var initialData = new WatchResourcesUpdate()
-                {
-                    InitialData = new InitialResourceData()
-                    {
-                        Resources = { new Resource() { Name = appName, Commands = { new ResourceCommandRequest() { CommandType = "Restart" } } } }
-                    }
-                };
-
-                await responseStream.WriteAsync(initialData);
+                initialData.Resources.Add(new Resource() { Name = appName, Commands = { new ResourceCommandRequest() { CommandType = "Restart" } } });
+              
             }
+
+            watchResourcesUpdate.InitialData = initialData;
+            await responseStream.WriteAsync(watchResourcesUpdate);
         }
 
         private async Task WatchAndWriteChangesToStream(IServerStreamWriter<WatchResourcesUpdate> responseStream)
@@ -130,14 +128,22 @@ namespace AspireGrpcService.Services
 
         public override async Task WatchResourceConsoleLogs(WatchResourceConsoleLogsRequest request, IServerStreamWriter<WatchResourceConsoleLogsUpdate> responseStream, ServerCallContext context)
         {
-            var label = $"app={request.ResourceName}";
+            var label = $"containerapps.io/app-name={request.ResourceName}";
             _logger.LogInformation($"Label : {label}");
             var pods = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace, labelSelector: label);
+
+            // We only have one pod deployed for each Aspire App
+            if (pods.Items.Count() > 1)
+            {
+                _logger.LogDebug($"Multiple pods were found for the app {request.ResourceName}");
+            }
+
             var podName = pods.Items[0].Metadata.Name;
+
             _logger.LogInformation($"PodName: {podName}");
             while (!context.CancellationToken.IsCancellationRequested)
             {
-                var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace);
+                var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: request.ResourceName);
                 var logsUpdate = new WatchResourceConsoleLogsUpdate();
                 using var reader = new StreamReader(stream);
                 while (!reader.EndOfStream)
