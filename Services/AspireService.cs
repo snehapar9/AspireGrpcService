@@ -33,39 +33,59 @@ namespace AspireGrpcService.Services
         {
             _currentWatchResourcesUpdateStream = responseStream;
 
-            // Creates the watcher
-            var podsWatchResponse = _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync("k8se-apps", watch: true);
-            var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
-            {
-                Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
-                var reply = new WatchResourcesUpdate()
-                {
-                    InitialData = new InitialResourceData()
-                    {
-                        ResourceTypes = { new ResourceType() { DisplayName = $"{type} pod: {item.Metadata.Name}" } }
-                    }
-                };
-                await responseStream.WriteAsync(reply);
-            });
+            //Get initial data and write to response stream
+            var initialData = await GetInitialData();
+            await responseStream.WriteAsync(initialData).ConfigureAwait(false);
 
-            // Gets the initial data and return it
-            var podsList = await _kubernetesClient.CoreV1.ListNamespacedPodAsync("k8se-apps");
-            var initialReply = new WatchResourcesUpdate()
-            {
-                InitialData = new InitialResourceData()
-                {
-                    ResourceTypes = { new ResourceType() { DisplayName = $"Initial call. Found {podsList.Items.Count} pods" } }
-                }
-            };
+            // Watch and write to stream
+            await WatchAndWriteChangesToStream(responseStream);
 
-            await responseStream.WriteAsync(initialReply);
-
+      
             // Wait until the cancellation is requested
             while (!context.CancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(TimeSpan.FromMinutes(1), context.CancellationToken).ContinueWith(task => { });
             }
             Console.WriteLine($"WatchResources connection canceled");
+        }
+
+        private async Task<WatchResourcesUpdate> GetInitialData()
+        {
+            // Gets the initial data and return it
+            var podsList = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace);
+            var pod = podsList.Items[0];
+            var initialData = new WatchResourcesUpdate()
+            {
+                InitialData = new InitialResourceData()
+                {
+                    ResourceTypes = { new ResourceType() { UniqueName = "Pod" } },
+                    Resources = { new Resource() { Name = "Pod", Endpoints = { new Aspire.V1.Endpoint() { EndpointUrl = pod.Status.PodIP } }, Commands = { new ResourceCommandRequest() { CommandType = "Restart" } } }
+
+                    }
+                }
+            };
+            return initialData;           
+        }
+
+        private async Task WatchAndWriteChangesToStream(IServerStreamWriter<WatchResourcesUpdate> responseStream)
+        {
+            // Creates the watcher
+            var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true);
+            var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
+            {
+                
+                Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
+                var reply = new WatchResourcesUpdate()
+                {
+                    // TODO : Figure out deletion or insert/upsert and add here.
+                    Changes = new WatchResourcesChanges()
+                    {
+                        Value = { new WatchResourcesChange() { Delete = new ResourceDeletion() { }, Upsert = new Resource { Name = item.Metadata.Name} } }
+                    }
+                    
+                };
+                await responseStream.WriteAsync(reply);
+            });
         }
 
         public override async Task WatchResourceConsoleLogs(WatchResourceConsoleLogsRequest request, IServerStreamWriter<WatchResourceConsoleLogsUpdate> responseStream, ServerCallContext context)
