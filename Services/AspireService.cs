@@ -52,7 +52,6 @@ namespace AspireGrpcService.Services
             // Gets the initial data and return it
             var podsList = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace);
             var watchResourcesUpdate = new WatchResourcesUpdate() { InitialData = new InitialResourceData() };
-            var initialData = new InitialResourceData();
   
             foreach (var pod in podsList)
             {
@@ -72,11 +71,10 @@ namespace AspireGrpcService.Services
 
                 _logger.LogDebug($"App name: {appName}");
                 _logger.LogDebug($"Result: {result}");
-                initialData.Resources.Add(new Resource() { Name = appName, Commands = { new ResourceCommandRequest() { CommandType = "Restart" } } });
-              
+                 watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, Commands = { new ResourceCommandRequest() { CommandType = "Restart" } } });
+             
             }
 
-            watchResourcesUpdate.InitialData = initialData;
             await responseStream.WriteAsync(watchResourcesUpdate);
         }
 
@@ -84,6 +82,7 @@ namespace AspireGrpcService.Services
         {
             // Creates the watcher
             var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true);
+            var watchResourcesUpdate = new WatchResourcesUpdate() { Changes = new WatchResourcesChanges() };
             var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
             {
                 var labels = item.Labels();
@@ -103,6 +102,7 @@ namespace AspireGrpcService.Services
                 Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
                 if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified))
                 {
+                    // TODO : Do not instatiate every iteration
                     var watchResourcesUpdate = new WatchResourcesUpdate()
                     {
                         Changes = new WatchResourcesChanges()
