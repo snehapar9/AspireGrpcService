@@ -101,7 +101,7 @@ namespace AspireGrpcService.Services
                 Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
                 if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified))
                 {
-                    watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Upsert = new Resource { Name = item.Metadata.Name } })
+                    watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Upsert = new Resource { Name = item.Metadata.Name } });
                     await responseStream.WriteAsync(watchResourcesUpdate);
                 }
                 else if (type.Equals(WatchEventType.Deleted))
