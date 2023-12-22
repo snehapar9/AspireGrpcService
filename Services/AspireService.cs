@@ -71,8 +71,7 @@ namespace AspireGrpcService.Services
 
                 _logger.LogDebug($"App name: {appName}");
                 _logger.LogDebug($"Result: {result}");
-                 watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, Commands = { new ResourceCommandRequest() { CommandType = "Restart" } } });
-             
+                 watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, Commands = { new ResourceCommandRequest() { CommandType = "Restart" } } });            
             }
 
             await responseStream.WriteAsync(watchResourcesUpdate);
@@ -102,25 +101,12 @@ namespace AspireGrpcService.Services
                 Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
                 if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified))
                 {
-                    // TODO : Do not instatiate every iteration
-                    var watchResourcesUpdate = new WatchResourcesUpdate()
-                    {
-                        Changes = new WatchResourcesChanges()
-                        {
-                            Value = { new WatchResourcesChange() { Upsert = new Resource { Name = item.Metadata.Name } } }
-                        }
-                    };
+                    watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Upsert = new Resource { Name = item.Metadata.Name } })
                     await responseStream.WriteAsync(watchResourcesUpdate);
                 }
                 else if (type.Equals(WatchEventType.Deleted))
                 {
-                    var watchResourcesUpdate = new WatchResourcesUpdate()
-                    {
-                        Changes = new WatchResourcesChanges()
-                        {
-                            Value = { new WatchResourcesChange() { Delete = new ResourceDeletion { ResourceName = item.Metadata.Name } } }
-                        }
-                    };
+                    watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Delete = new ResourceDeletion { ResourceName = item.Metadata.Name } });
                     await responseStream.WriteAsync(watchResourcesUpdate);
                 }
             });
