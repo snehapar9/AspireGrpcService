@@ -139,8 +139,8 @@ namespace AspireGrpcService.Services
             while (!context.CancellationToken.IsCancellationRequested)
             {
                 // Re-set stream to the beginning to make sure repetitive logs are not read. 
-                stream.Seek(stream.Length, SeekOrigin.Begin);
-                stream = (MemoryStream)await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name, follow: true);
+                stream.Seek(0, SeekOrigin.Begin);
+                stream = (MemoryStream)await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name);
                 var logsUpdate = new WatchResourceConsoleLogsUpdate();
                 using var reader = new StreamReader(stream);
                 while (!reader.EndOfStream)
@@ -154,9 +154,37 @@ namespace AspireGrpcService.Services
             }
         }
 
-        public override Task<ResourceCommandResponse> ExecuteResourceCommand(ResourceCommandRequest request, ServerCallContext context)
+        public override async Task<ResourceCommandResponse> ExecuteResourceCommand(ResourceCommandRequest request, ServerCallContext context)
         {
-            return base.ExecuteResourceCommand(request, context);
+            var response = new ResourceCommandResponse();
+            if (request.CommandType.ToUpper().Equals("RESTART"))
+            {
+                var label = $"containerapps.io/app-name={request.Name}";
+                _logger.LogInformation($"Label : {label}");
+                var pods = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace, labelSelector: label);
+                // We only have one pod deployed for each Aspire App
+                if (pods.Items.Count() > 1)
+                {
+                    _logger.LogDebug($"Multiple pods were found for the app {request.Name}");
+                    response.Kind = ResourceCommandResponseKind.Failed;
+                    response.ErrorMessage = $"Expected one pod for {request.Name} but found ${pods.Items.Count()} pods.";
+                    return response;
+                }
+                var pod = pods.Items[0];
+                var podName = pod.Metadata.Name;
+                var deletedPod = await _kubernetesClient.DeleteNamespacedPodAsync(podName, _kubernetesConfig.Namespace);
+                TimeSpan timeoutDuration = TimeSpan.FromSeconds(60);
+                DateTime startTime = DateTime.Now;
+                while (DateTime.Now - startTime < timeoutDuration)
+                {
+                    if (deletedPod.DeletionTimestamp == null) continue;
+                    response.Kind = ResourceCommandResponseKind.Succeeded;
+                    return response;
+                }
+                response.Kind = ResourceCommandResponseKind.Failed;
+                response.ErrorMessage = $"Timed out after {timeoutDuration} seconds. Pod {pod.Metadata.Name} was not deleted.";            
+            }
+            return response;
         }
 
     }
