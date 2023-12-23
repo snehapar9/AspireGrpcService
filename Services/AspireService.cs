@@ -52,7 +52,7 @@ namespace AspireGrpcService.Services
             // Gets the initial data and return it
             var podsList = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace);
             var watchResourcesUpdate = new WatchResourcesUpdate() { InitialData = new InitialResourceData() };
-  
+
             foreach (var pod in podsList)
             {
                 var labels = pod.Labels();
@@ -71,7 +71,7 @@ namespace AspireGrpcService.Services
 
                 _logger.LogDebug($"App name: {appName}");
                 _logger.LogDebug($"Result: {result}");
-                 watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, Commands = { new ResourceCommandRequest() { CommandType = "Restart" } } });            
+                watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, DisplayName = appName, ResourceType = pod.Kind, Uid = pod.Uid(), CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(pod.CreationTimestamp().Value), State = pod.Status.Phase, Endpoints = { new Aspire.V1.Endpoint() { EndpointUrl = pod.Status.PodIP } }, Properties = { new ResourceProperty() { DisplayName = pod.Kind, Name = pod.Metadata.Name } } });
             }
 
             await responseStream.WriteAsync(watchResourcesUpdate);
@@ -88,7 +88,7 @@ namespace AspireGrpcService.Services
                 if (labels.IsNullOrEmpty())
                 {
                     _logger.LogDebug($"Unable to fetch app name because Pod: {item.Metadata.Name} does not contain labels.Skipping to next pod.");
-                    return;        
+                    return;
                 }
 
                 var result = labels.TryGetValue("containerapps.io/app-name", out string appName);
@@ -101,12 +101,12 @@ namespace AspireGrpcService.Services
                 Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
                 if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified))
                 {
-                    watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Upsert = new Resource { Name = item.Metadata.Name } });
+                    watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Upsert = { Name = appName, DisplayName = appName, ResourceType = item.Kind, Uid = item.Uid(), CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(item.CreationTimestamp().Value), State = item.Status.Phase, Endpoints = { new Aspire.V1.Endpoint() { EndpointUrl = item.Status.PodIP } }, Properties = { new ResourceProperty() { DisplayName = item.Kind, Name = item.Metadata.Name } } } });
                     await responseStream.WriteAsync(watchResourcesUpdate);
                 }
                 else if (type.Equals(WatchEventType.Deleted))
                 {
-                    watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Delete = new ResourceDeletion { ResourceName = item.Metadata.Name } });
+                    watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Delete = new ResourceDeletion { ResourceName = item.Metadata.Name, ResourceType = item.Kind } });
                     await responseStream.WriteAsync(watchResourcesUpdate);
                 }
             });
