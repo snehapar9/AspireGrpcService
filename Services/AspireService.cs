@@ -139,10 +139,11 @@ namespace AspireGrpcService.Services
                 _logger.LogWarning($"Container matching {request.ResourceName} does not exist");
                 return;
             }
-            
+
             _logger.LogInformation($"PodName: {podName}");
             while (!context.CancellationToken.IsCancellationRequested)
             {
+                // Historical logs are being written every time - https://github.com/kubernetes-client/csharp/issues/294
                 var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name);
                 var logsUpdate = new WatchResourceConsoleLogsUpdate();
                 using var reader = new StreamReader(stream);
@@ -152,10 +153,7 @@ namespace AspireGrpcService.Services
                     logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logEntry });
                 }
 
-                // Seek to the end of the stream to read only new logs
-                stream.Seek(0, SeekOrigin.End);
                 await responseStream.WriteAsync(logsUpdate);
-
                 await Task.Delay(1000);
             }
         }
@@ -188,7 +186,7 @@ namespace AspireGrpcService.Services
                     return response;
                 }
                 response.Kind = ResourceCommandResponseKind.Failed;
-                response.ErrorMessage = $"Timed out after {timeoutDuration} seconds. Pod {pod.Metadata.Name} was not deleted.";            
+                response.ErrorMessage = $"Timed out after {timeoutDuration} seconds. Pod {pod.Metadata.Name} was not deleted.";
             }
             return response;
         }
