@@ -2,9 +2,11 @@
 using Azure.Core;
 using Grpc.Core;
 using k8s;
+using k8s.Autorest;
 using k8s.Models;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
+using System.ComponentModel;
 using static Prometheus.Exemplar;
 namespace AspireGrpcService.Services
 {
@@ -125,17 +127,20 @@ namespace AspireGrpcService.Services
             }
 
             var podName = pods.Items[0].Metadata.Name;
-
+            var container = pods.Items[0].Spec.Containers.Where(c => c.Name == request.ResourceName).FirstOrDefault();
+            if (container == null)
+            {
+                _logger.LogWarning($"Container matching {request.ResourceName} does not exist");
+                return;
+            }
+            
             _logger.LogInformation($"PodName: {podName}");
+            var stream = new System.IO.MemoryStream();
             while (!context.CancellationToken.IsCancellationRequested)
             {
-                var container = pods.Items[0].Spec.Containers.Where(c => c.Name == request.ResourceName).FirstOrDefault();
-                if (container == null)
-                {
-                    _logger.LogWarning($"Container matching {request.ResourceName} does not exist");
-                    continue;
-                }
-                var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name);
+                // Re-set stream to the beginning to make sure repetitive logs are not read. 
+                stream.Seek(stream.Length, SeekOrigin.Begin);
+                stream = (MemoryStream)await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name, follow: true);
                 var logsUpdate = new WatchResourceConsoleLogsUpdate();
                 using var reader = new StreamReader(stream);
                 while (!reader.EndOfStream)
