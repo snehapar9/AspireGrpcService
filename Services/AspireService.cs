@@ -131,6 +131,8 @@ namespace AspireGrpcService.Services
             }
 
             var podName = pods.Items[0].Metadata.Name;
+
+            // The container's name the app's name in the cluster ( verified for Aspire app deployed from AZD)
             var container = pods.Items[0].Spec.Containers.Where(c => c.Name == request.ResourceName).FirstOrDefault();
             if (container == null)
             {
@@ -139,12 +141,9 @@ namespace AspireGrpcService.Services
             }
             
             _logger.LogInformation($"PodName: {podName}");
-            var stream = new System.IO.MemoryStream();
             while (!context.CancellationToken.IsCancellationRequested)
             {
-                // Re-set stream to the beginning to make sure repetitive logs are not read. 
-                stream.Seek(0, SeekOrigin.Begin);
-                stream = (MemoryStream)await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name);
+                var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name);
                 var logsUpdate = new WatchResourceConsoleLogsUpdate();
                 using var reader = new StreamReader(stream);
                 while (!reader.EndOfStream)
@@ -152,6 +151,9 @@ namespace AspireGrpcService.Services
                     var logEntry = await reader.ReadLineAsync();
                     logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logEntry });
                 }
+
+                // Seek to the end of the stream to read only new logs
+                stream.Seek(0, SeekOrigin.End);
                 await responseStream.WriteAsync(logsUpdate);
 
                 await Task.Delay(1000);
