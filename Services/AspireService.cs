@@ -108,14 +108,13 @@ namespace AspireGrpcService.Services
                 if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified))
                 {
                     watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Upsert = { Name = appName, DisplayName = appName, ResourceType = item.Kind, Uid = item.Uid(), CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(item.CreationTimestamp().Value), State = item.Status.Phase, Endpoints = { new Aspire.V1.Endpoint() { EndpointUrl = item.Status.PodIP } }, Properties = { new ResourceProperty() { DisplayName = item.Kind, Name = item.Metadata.Name } } } });
-                    await responseStream.WriteAsync(watchResourcesUpdate);
                 }
                 else if (type.Equals(WatchEventType.Deleted))
                 {
                     watchResourcesUpdate.Changes.Value.Add(new WatchResourcesChange() { Delete = new ResourceDeletion { ResourceName = item.Metadata.Name, ResourceType = item.Kind } });
-                    await responseStream.WriteAsync(watchResourcesUpdate);
                 }
             });
+            await responseStream.WriteAsync(watchResourcesUpdate);
         }
 
         public override async Task WatchResourceConsoleLogs(WatchResourceConsoleLogsRequest request, IServerStreamWriter<WatchResourceConsoleLogsUpdate> responseStream, ServerCallContext context)
