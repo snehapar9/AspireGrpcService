@@ -174,7 +174,7 @@ namespace AspireGrpcService.Services
                 {
                     _logger.LogDebug($"Multiple pods were found for the app {request.Name}");
                     response.Kind = ResourceCommandResponseKind.Failed;
-                    response.ErrorMessage = $"Expected one pod for {request.Name} but found ${pods.Items.Count()} pods.";
+                    response.ErrorMessage = $"Expected one pod for {request.Name} but found {pods.Items.Count()} pods.";
                     return response;
                 }
                 var pod = pods.Items[0];
