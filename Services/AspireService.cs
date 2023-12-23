@@ -129,7 +129,13 @@ namespace AspireGrpcService.Services
             _logger.LogInformation($"PodName: {podName}");
             while (!context.CancellationToken.IsCancellationRequested)
             {
-                var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: request.ResourceName);
+                var container = pods.Items[0].Spec.Containers.Where(c => c.Name == request.ResourceName).FirstOrDefault();
+                if (container == null)
+                {
+                    _logger.LogWarning($"Container matching {request.ResourceName} does not exist");
+                    continue;
+                }
+                var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name);
                 var logsUpdate = new WatchResourceConsoleLogsUpdate();
                 using var reader = new StreamReader(stream);
                 while (!reader.EndOfStream)
