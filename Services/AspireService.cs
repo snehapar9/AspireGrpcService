@@ -28,7 +28,11 @@ namespace AspireGrpcService.Services
         public override async Task<ApplicationInformationResponse> GetApplicationInformation(ApplicationInformationRequest request, ServerCallContext context)
         {
             // TODO - Confirm if we can use "tags" to identity Aspire Apps in ACA.
-            return await base.GetApplicationInformation(request, context).ConfigureAwait(false);
+            var response = new ApplicationInformationResponse
+            {
+                ApplicationName = "My App"
+            };
+            return response;
         }
 
         public override async Task WatchResources(WatchResourcesRequest request, IServerStreamWriter<WatchResourcesUpdate> responseStream, ServerCallContext context)
