@@ -132,7 +132,7 @@ namespace AspireGrpcService.Services
 
             var podName = pods.Items[0].Metadata.Name;
 
-            // The container's name the app's name in the cluster ( verified for Aspire app deployed from AZD)
+            // The container's name is the app's name in the cluster ( verified for Aspire app deployed from AZD)
             var container = pods.Items[0].Spec.Containers.Where(c => c.Name == request.ResourceName).FirstOrDefault();
             if (container == null)
             {
@@ -144,6 +144,8 @@ namespace AspireGrpcService.Services
             while (!context.CancellationToken.IsCancellationRequested)
             {
                 // Historical logs are being written every time - https://github.com/kubernetes-client/csharp/issues/294
+                // Live streaming logs capability not available -> Setting follow to true keeps the connection open, but logs are not being written to stream.
+                // Setting tailLines to an integer number, would fetch the last tailLines number of logs, but there may be some missing logs with this approach.
                 var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name);
                 var logsUpdate = new WatchResourceConsoleLogsUpdate();
                 using var reader = new StreamReader(stream);
