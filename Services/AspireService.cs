@@ -89,7 +89,7 @@ namespace AspireGrpcService.Services
         {
             // Creates the watcher
             var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true);
-            var watchResourcesUpdate = new WatchResourcesUpdate() { Changes = new WatchResourcesChanges() };
+            
             var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
             {
                 var labels = item.Labels();
@@ -132,7 +132,6 @@ namespace AspireGrpcService.Services
                    
                 }
             });
-            await responseStream.WriteAsync(watchResourcesUpdate);
         }
 
         public override async Task WatchResourceConsoleLogs(WatchResourceConsoleLogsRequest request, IServerStreamWriter<WatchResourceConsoleLogsUpdate> responseStream, ServerCallContext context)
