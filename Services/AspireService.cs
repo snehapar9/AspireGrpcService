@@ -1,12 +1,16 @@
 ﻿using Aspire.V1;
 using Azure.Core;
+using Google.Protobuf.Collections;
 using Grpc.Core;
 using k8s;
 using k8s.Autorest;
+using k8s.KubeConfigModels;
 using k8s.Models;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
 using System.ComponentModel;
+using System.Reflection.PortableExecutable;
+using System.Text;
 using static Prometheus.Exemplar;
 using ResourceType = Aspire.V1.ResourceType;
 namespace AspireGrpcService.Services
@@ -44,7 +48,7 @@ namespace AspireGrpcService.Services
             await WriteInitialDataToStream(responseStream);
 
             // Watch and write to stream
-            await WatchAndWriteChangesToStream(responseStream);
+            var disposableWatcher = await WatchAndWriteChangesToStreamAsync(responseStream, context.CancellationToken);
 
             // Wait until the cancellation is requested
             while (!context.CancellationToken.IsCancellationRequested)
@@ -52,6 +56,9 @@ namespace AspireGrpcService.Services
                 await Task.Delay(TimeSpan.FromMinutes(1), context.CancellationToken).ContinueWith(task => { });
             }
             Console.WriteLine($"WatchResources connection canceled");
+            // Make sure we dispose the pod watcher.
+            disposableWatcher.Dispose();
+            Console.WriteLine($"WatchResources connection cleaned up");
         }
 
         private async Task WriteInitialDataToStream(IServerStreamWriter<WatchResourcesUpdate> responseStream)
@@ -69,53 +76,63 @@ namespace AspireGrpcService.Services
                     continue;
                 }
 
-                var result = labels.TryGetValue("containerapps.io/app-name", out string appName);
+                var result = labels.TryGetValue("containerapps.io/app-name", out string containerAppName);
                 if (!result)
                 {
                     _logger.LogDebug($"The Pod {pod.Metadata.Name} does not have an entry for the key app. Skipping to next pod.");
                     continue;
                 }
 
-                _logger.LogDebug($"App name: {appName}");
-                _logger.LogDebug($"Result: {result}");
-                // TODO - Determine public endpoint. Cannot use PodIp/HostIp because it would cancel the operation if these properties become null when pods are deleted.
-                watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, DisplayName = appName, ResourceType = "Pod", CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(pod.CreationTimestamp().Value), Uid = pod.Uid(), State = pod.Status.Phase, Properties = { new ResourceProperty() { DisplayName = pod.Metadata.Name, Name = pod.Metadata.Name } } });
+                watchResourcesUpdate.InitialData.Resources.Add(await ConvertContainerAppPodToResourceAsync(pod, containerAppName));
                 watchResourcesUpdate.InitialData.ResourceTypes.Add(new ResourceType() { UniqueName = pod.Metadata.Name, DisplayName = pod.Metadata.Name });
             }
 
             await responseStream.WriteAsync(watchResourcesUpdate);
         }
 
-        private async Task WatchAndWriteChangesToStream(IServerStreamWriter<WatchResourcesUpdate> responseStream)
+        private async Task<IDisposable> WatchAndWriteChangesToStreamAsync(IServerStreamWriter<WatchResourcesUpdate> responseStream, CancellationToken cancellationToken)
         {
             // Creates the watcher
             var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true);
 
-            var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
+            var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, pod) =>
             {
-                var labels = item.Labels();
+                Console.WriteLine("WATCH POD ON EVENT: " + type + " - " + pod.Metadata.Name);
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    Console.WriteLine("Cancellation already requested for this stream. Not processing the event.");
+                    return;
+                }
+
+                var labels = pod.Labels();
                 if (labels.IsNullOrEmpty())
                 {
-                    _logger.LogDebug($"Unable to fetch app name because Pod: {item.Metadata.Name} does not contain labels.Skipping to next pod.");
+                    Console.WriteLine($"Unable to fetch app name because Pod: {pod.Metadata.Name} does not contain labels. Skipping to next pod.");
                     return;
                 }
 
-                var result = labels.TryGetValue("containerapps.io/app-name", out string appName);
+                var result = labels.TryGetValue("containerapps.io/app-name", out string containerAppName);
                 if (!result)
                 {
-                    _logger.LogDebug($"The Pod {item.Metadata.Name} does not have an entry for the key app. Skipping to next pod.");
+                    Console.WriteLine($"The Pod {pod.Metadata.Name} does not have an entry for the key app. Skipping to next pod.");
                     return;
                 }
 
-                Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
+                Console.WriteLine($"Pod event of type {type} detected for {pod.Metadata.Name}");
                 if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified))
                 {
                     var watchResourcesUpdate = new WatchResourcesUpdate()
                     {
                         Changes = new WatchResourcesChanges()
                         {
-                            // Hard-coded resource type to pod because pod.Kind can be Null and would throw an exception.
-                            Value = { new WatchResourcesChange() { Upsert = new Resource() { DisplayName = appName, Name = appName, CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(item.CreationTimestamp().Value), Uid = item.Uid(), ResourceType = "Pod", State = item.Status.Phase, Properties = { new ResourceProperty() { Name = item.Metadata.Name, DisplayName = item.Metadata.Name } } } } }
+                            Value =
+                            {
+                                new WatchResourcesChange()
+                                {
+                                    Upsert = await ConvertContainerAppPodToResourceAsync(pod, containerAppName)
+                                }
+                            }
                         }
                     };
 
@@ -127,13 +144,69 @@ namespace AspireGrpcService.Services
                     {
                         Changes = new WatchResourcesChanges()
                         {
-                            Value = { new WatchResourcesChange() { Delete = new ResourceDeletion { ResourceName = item.Metadata.Name, ResourceType = "Pod" } } }
+                            Value = {
+                                new WatchResourcesChange()
+                                {
+                                    Delete = new ResourceDeletion
+                                    {
+                                        ResourceName = pod.Metadata.Name,
+                                        ResourceType = "Pod"
+                                    }
+                                }
+                            }
                         }
                     };
                     await responseStream.WriteAsync(watchResourcesUpdate);
 
                 }
             });
+            return podWatcher;
+        }
+
+        private async Task<Resource> ConvertContainerAppPodToResourceAsync(V1Pod pod, string containerAppName)
+        {
+            var appPodsList = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace, labelSelector: $"containerapps.io/app-name={containerAppName}");
+            var isTerminating = appPodsList.Items.Any(pod => pod.Metadata.DeletionTimestamp.HasValue);
+            // There must be at least one Container App container in a Container Apps
+            var container = pod.Spec.Containers.FirstOrDefault(container => container.Env.Any(envVar => envVar.Name == "CONTAINER_APP_NAME" && envVar.Value == containerAppName));
+            if (container == null)
+            {
+                throw new Exception($"Container app {containerAppName} has no matching container");
+            }
+
+            var resource = new Resource()
+            {
+                DisplayName = containerAppName,
+                Name = containerAppName,
+                CreatedAt = pod.Status.StartTime.HasValue ? Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(pod.Status.StartTime.Value) : Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(DateTime.UtcNow), // Use fake value until optional
+                Uid = pod.Uid(),
+                ResourceType = "Container",
+                State = isTerminating ? "Restarting" : pod.Status.Phase == "Succeeded" ? "Pending" : pod.Status.Phase,//.Count.ToString(),// item.Status.Phase,
+                Properties =
+                {
+                    new ResourceProperty()
+                    {
+                        Name = pod.Metadata.Name,
+                        DisplayName = "Pod"
+                    }
+                }
+            };
+
+            var endpoints = new List<Aspire.V1.Endpoint>();
+            var endpointUrl = container.Env.FirstOrDefault(envVar => envVar.Name == "CONTAINER_APP_HOSTNAME")?.Value;
+            if (endpointUrl != null)
+            {
+                endpoints.Add(new Aspire.V1.Endpoint() { EndpointUrl = $"https://{endpointUrl}" });
+            }
+            resource.Endpoints.Add(endpoints);
+
+            var environmentVariables = container.Env.Select(envVar => new EnvironmentVariable() { Name = envVar.Name, Value = envVar.Value ?? (envVar.ValueFrom?.ConfigMapKeyRef != null ? "<FROM CONFIGMAP>" : "<OTHER>" ) });
+            if (environmentVariables != null)
+            {
+                resource.Environment.Add(environmentVariables);
+            }
+
+            return resource;
         }
 
         public override async Task WatchResourceConsoleLogs(WatchResourceConsoleLogsRequest request, IServerStreamWriter<WatchResourceConsoleLogsUpdate> responseStream, ServerCallContext context)
@@ -149,7 +222,7 @@ namespace AspireGrpcService.Services
             }
 
             var pod = pods.Items[0];
-            var container = pod.Spec.Containers.Where(c => c.Name.Equals(request.ResourceName)).FirstOrDefault();
+            var container = pod.Spec.Containers.FirstOrDefault(container => container.Env.Any(envVar => envVar.Name == "CONTAINER_APP_NAME" && envVar.Value == request.ResourceName));
 
             // Container's name is the app's name (Verified by deploying an aspire app from AZD).
             if (container == null)
