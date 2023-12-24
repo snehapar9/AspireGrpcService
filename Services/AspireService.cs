@@ -140,34 +140,26 @@ namespace AspireGrpcService.Services
         {
             var label = $"containerapps.io/app-name={request.ResourceName}";
             _logger.LogInformation($"Label : {label}");
-            var pods = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace, labelSelector: label);
-
-            // We only have one pod deployed for each Aspire App
-            if (pods.Items.Count() > 1)
-            {
-                _logger.LogDebug($"Multiple pods were found for the app {request.ResourceName}");
-            }
-
-            var podName = pods.Items[0].Metadata.Name;
-
-            // The container's name is the app's name in the cluster ( verified for Aspire app deployed from AZD)
-            var container = pods.Items[0].Spec.Containers.Where(c => c.Name == request.ResourceName).FirstOrDefault();
-            if (container == null)
-            {
-                _logger.LogWarning($"Container matching {request.ResourceName} does not exist");
-                return;
-            }
-
-            _logger.LogInformation($"PodName: {podName}");
+            var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true, labelSelector: label);
             while (!context.CancellationToken.IsCancellationRequested)
             {
-                // Historical logs are being written every time - https://github.com/kubernetes-client/csharp/issues/294
-                // Live streaming logs capability not available -> Setting follow to true keeps the connection open, but logs are not being written to stream.
-                // Setting tailLines to an integer number, would fetch the last tailLines number of logs, but there may be some missing logs with this approach and this
-                // does not provide a real time streaming experience.
-                var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(podName, _kubernetesConfig.Namespace, container: container.Name);
+                var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
+                {
+                    Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
+                    if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified) || type.Equals(WatchEventType.Error) || type.Equals(WatchEventType.Deleted))
+                    {
+                        // Is it better to get seconds to reduce redundant logs?
+                        var startTimeSecond = DateTime.Now.Second == 0 ? DateTime.Now.AddSeconds(1).Second : DateTime.Now.Second;
+                        var container = item.Spec.Containers.Where(c => c.Name.Equals(request.ResourceName)).FirstOrDefault();
+                        // Container's name is the app's name (Verified by deploying an aspire app from AZD).
+            if (container == null)
+            {
+                            _logger.LogError($"Container with name {request.ResourceName} is not found.");
+                return;
+            }
+                        using var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogWithHttpMessagesAsync(item.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, sinceSeconds: startTimeSecond);
                 var logsUpdate = new WatchResourceConsoleLogsUpdate();
-                using var reader = new StreamReader(stream);
+                        using var reader = new StreamReader(stream.Body, leaveOpen: true);
                 while (!reader.EndOfStream)
                 {
                     var logEntry = await reader.ReadLineAsync();
@@ -176,6 +168,8 @@ namespace AspireGrpcService.Services
 
                 await responseStream.WriteAsync(logsUpdate);
                 await Task.Delay(1000);
+            }
+                });
             }
         }
 
