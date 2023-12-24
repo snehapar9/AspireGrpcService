@@ -78,7 +78,8 @@ namespace AspireGrpcService.Services
 
                 _logger.LogDebug($"App name: {appName}");
                 _logger.LogDebug($"Result: {result}");
-                watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, DisplayName = appName, ResourceType = "Pod",CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(pod.CreationTimestamp().Value), Uid = pod.Uid(), State = pod.Status.Phase, Endpoints = { new Aspire.V1.Endpoint() { EndpointUrl = pod.Status.HostIP } }, Properties = { new ResourceProperty() { DisplayName = pod.Metadata.Name, Name = pod.Metadata.Name } } });
+                // TODO - Determine public endpoint. Cannot use PodIp/HostIp because it would cancel the operation if these properties become null when pods are deleted.
+                watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, DisplayName = appName, ResourceType = "Pod",CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(pod.CreationTimestamp().Value), Uid = pod.Uid(), State = pod.Status.Phase, Properties = { new ResourceProperty() { DisplayName = pod.Metadata.Name, Name = pod.Metadata.Name } } });
                 watchResourcesUpdate.InitialData.ResourceTypes.Add(new ResourceType() { UniqueName = pod.Metadata.Name, DisplayName = pod.Metadata.Name });
             }
 
@@ -113,7 +114,8 @@ namespace AspireGrpcService.Services
                     {
                         Changes = new WatchResourcesChanges()
                         {
-                            Value = { new WatchResourcesChange() { Upsert = new Resource() { DisplayName = appName, Name = appName, CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(item.CreationTimestamp().Value), Uid = item.Uid(), Endpoints = { new Aspire.V1.Endpoint() { EndpointUrl = item.Status.HostIP } }, ResourceType = item.Kind, State = item.Status.Phase, Properties = { new ResourceProperty() { Name = item.Metadata.Name, DisplayName = item.Kind } } } } }
+                            // Hard-coded resource type to pod because pod.Kind can be Null and would throw an exception.
+                            Value = { new WatchResourcesChange() { Upsert = new Resource() { DisplayName = appName, Name = appName, CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(item.CreationTimestamp().Value), Uid = item.Uid(), ResourceType = "Pod" , State = item.Status.Phase, Properties = { new ResourceProperty() { Name = item.Metadata.Name, DisplayName = item.Metadata.Name } } } } }
                         }
                     };
 
@@ -125,7 +127,7 @@ namespace AspireGrpcService.Services
                     {
                         Changes = new WatchResourcesChanges()
                         {
-                            Value = { new WatchResourcesChange() { Delete = new ResourceDeletion { ResourceName = item.Metadata.Name, ResourceType = item.Kind } } }
+                            Value = { new WatchResourcesChange() { Delete = new ResourceDeletion { ResourceName = item.Metadata.Name, ResourceType = "Pod" } } }
                         }
                     };
                     await responseStream.WriteAsync (watchResourcesUpdate);
