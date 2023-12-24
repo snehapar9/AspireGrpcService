@@ -58,7 +58,7 @@ namespace AspireGrpcService.Services
         {
             // Gets the initial data and return it
             var podsList = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace);
-            var watchResourcesUpdate = new WatchResourcesUpdate() { InitialData = new InitialResourceData() { Resources = { new Resource()}, ResourceTypes = { new Aspire.V1.ResourceType()} } };
+            var watchResourcesUpdate = new WatchResourcesUpdate() { InitialData = new InitialResourceData() { } };
 
             foreach (var pod in podsList)
             {
@@ -78,8 +78,8 @@ namespace AspireGrpcService.Services
 
                 _logger.LogDebug($"App name: {appName}");
                 _logger.LogDebug($"Result: {result}");
-                watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, DisplayName = appName, ResourceType = pod.Kind, Uid = pod.Uid(), CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(pod.CreationTimestamp().Value), State = pod.Status.Phase, Endpoints = { new Aspire.V1.Endpoint() { EndpointUrl = pod.Status.PodIP } }, Properties = { new ResourceProperty() { DisplayName = pod.Kind, Name = pod.Metadata.Name } } });
-                watchResourcesUpdate.InitialData.ResourceTypes.Add(new ResourceType() { UniqueName = pod.Metadata.Name });
+                watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, DisplayName = appName, ResourceType = "Pod",CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(pod.CreationTimestamp().Value), Uid = pod.Uid(), State = pod.Status.Phase, Endpoints = { new Aspire.V1.Endpoint() { EndpointUrl = pod.Status.HostIP } }, Properties = { new ResourceProperty() { DisplayName = pod.Metadata.Name, Name = pod.Metadata.Name } } });
+                watchResourcesUpdate.InitialData.ResourceTypes.Add(new ResourceType() { UniqueName = pod.Metadata.Name, DisplayName = pod.Metadata.Name });
             }
 
             await responseStream.WriteAsync(watchResourcesUpdate);
