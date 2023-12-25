@@ -148,7 +148,6 @@ namespace AspireGrpcService.Services
                     Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
                     if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified) || type.Equals(WatchEventType.Error) || type.Equals(WatchEventType.Deleted))
                     {
-                        // Is it better to get seconds to reduce redundant logs?
                         var startTimeSecond = DateTime.Now.Second == 0 ? DateTime.Now.AddSeconds(1).Second : DateTime.Now.Second;
                         var container = item.Spec.Containers.Where(c => c.Name.Equals(request.ResourceName)).FirstOrDefault();
                         // Container's name is the app's name (Verified by deploying an aspire app from AZD).
