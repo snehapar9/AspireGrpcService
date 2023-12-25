@@ -79,7 +79,7 @@ namespace AspireGrpcService.Services
                 _logger.LogDebug($"App name: {appName}");
                 _logger.LogDebug($"Result: {result}");
                 // TODO - Determine public endpoint. Cannot use PodIp/HostIp because it would cancel the operation if these properties become null when pods are deleted.
-                watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, DisplayName = appName, ResourceType = "Pod",CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(pod.CreationTimestamp().Value), Uid = pod.Uid(), State = pod.Status.Phase, Properties = { new ResourceProperty() { DisplayName = pod.Metadata.Name, Name = pod.Metadata.Name } } });
+                watchResourcesUpdate.InitialData.Resources.Add(new Resource() { Name = appName, DisplayName = appName, ResourceType = "Pod", CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(pod.CreationTimestamp().Value), Uid = pod.Uid(), State = pod.Status.Phase, Properties = { new ResourceProperty() { DisplayName = pod.Metadata.Name, Name = pod.Metadata.Name } } });
                 watchResourcesUpdate.InitialData.ResourceTypes.Add(new ResourceType() { UniqueName = pod.Metadata.Name, DisplayName = pod.Metadata.Name });
             }
 
@@ -90,7 +90,7 @@ namespace AspireGrpcService.Services
         {
             // Creates the watcher
             var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true);
-            
+
             var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
             {
                 var labels = item.Labels();
@@ -115,7 +115,7 @@ namespace AspireGrpcService.Services
                         Changes = new WatchResourcesChanges()
                         {
                             // Hard-coded resource type to pod because pod.Kind can be Null and would throw an exception.
-                            Value = { new WatchResourcesChange() { Upsert = new Resource() { DisplayName = appName, Name = appName, CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(item.CreationTimestamp().Value), Uid = item.Uid(), ResourceType = "Pod" , State = item.Status.Phase, Properties = { new ResourceProperty() { Name = item.Metadata.Name, DisplayName = item.Metadata.Name } } } } }
+                            Value = { new WatchResourcesChange() { Upsert = new Resource() { DisplayName = appName, Name = appName, CreatedAt = Google.Protobuf.WellKnownTypes.Timestamp.FromDateTime(item.CreationTimestamp().Value), Uid = item.Uid(), ResourceType = "Pod", State = item.Status.Phase, Properties = { new ResourceProperty() { Name = item.Metadata.Name, DisplayName = item.Metadata.Name } } } } }
                         }
                     };
 
@@ -130,8 +130,8 @@ namespace AspireGrpcService.Services
                             Value = { new WatchResourcesChange() { Delete = new ResourceDeletion { ResourceName = item.Metadata.Name, ResourceType = "Pod" } } }
                         }
                     };
-                    await responseStream.WriteAsync (watchResourcesUpdate);
-                   
+                    await responseStream.WriteAsync(watchResourcesUpdate);
+
                 }
             });
         }
@@ -152,23 +152,23 @@ namespace AspireGrpcService.Services
                         var startTimeSecond = DateTime.Now.Second == 0 ? DateTime.Now.AddSeconds(1).Second : DateTime.Now.Second;
                         var container = item.Spec.Containers.Where(c => c.Name.Equals(request.ResourceName)).FirstOrDefault();
                         // Container's name is the app's name (Verified by deploying an aspire app from AZD).
-            if (container == null)
-            {
+                        if (container == null)
+                        {
                             _logger.LogError($"Container with name {request.ResourceName} is not found.");
-                return;
-            }
-                        using var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogWithHttpMessagesAsync(item.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, sinceSeconds: startTimeSecond);
-                var logsUpdate = new WatchResourceConsoleLogsUpdate();
-                        using var reader = new StreamReader(stream.Body, leaveOpen: true);
-                while (!reader.EndOfStream)
-                {
-                    var logEntry = await reader.ReadLineAsync();
-                    logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logEntry });
-                }
+                            return;
+                        }
+                        var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogWithHttpMessagesAsync(item.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, sinceSeconds: startTimeSecond);
+                        var logsUpdate = new WatchResourceConsoleLogsUpdate();
+                        var reader = new StreamReader(stream.Body, leaveOpen: true);
+                        while (!reader.EndOfStream)
+                        {
+                            var logEntry = await reader.ReadLineAsync();
+                            logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logEntry });
+                        }
 
-                await responseStream.WriteAsync(logsUpdate);
-                await Task.Delay(1000);
-            }
+                        await responseStream.WriteAsync(logsUpdate);
+                        await Task.Delay(1000);
+                    }
                 });
             }
         }
