@@ -141,23 +141,25 @@ namespace AspireGrpcService.Services
             var label = $"containerapps.io/app-name={request.ResourceName}";
             _logger.LogInformation($"Label : {label}");
             var pods = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace, labelSelector: label);
+
+            // Aspire application only deployed to single pod using AZD
+            if (pods.Items.Count > 1)
+            {
+                _logger.LogWarning($"Expected only one pod to match label {label} but found {pods.Items.Count}");
+            }
+
+            var pod = pods.Items[0];
+            var container = pod.Spec.Containers.Where(c => c.Name.Equals(request.ResourceName)).FirstOrDefault();
+
+            // Container's name is the app's name (Verified by deploying an aspire app from AZD).
+            if (container == null)
+            {
+                _logger.LogError($"Container with name {request.ResourceName} is not found.");
+                return;
+            }
+
             while (!context.CancellationToken.IsCancellationRequested)
             {
-                // Aspire application only deployed to single pod using AZD
-                if (pods.Items.Count > 1)
-                {
-                    _logger.LogWarning($"Expected only one pod to match label {label} but found {pods.Items.Count}");
-                }
-
-                var pod = pods.Items[0];
-                var container = pod.Spec.Containers.Where(c => c.Name.Equals(request.ResourceName)).FirstOrDefault();
-
-                // Container's name is the app's name (Verified by deploying an aspire app from AZD).
-                if (container == null)
-                {
-                    _logger.LogError($"Container with name {request.ResourceName} is not found.");
-                    return;
-                }
                 var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogWithHttpMessagesAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name);
                 var logsUpdate = new WatchResourceConsoleLogsUpdate();
                 var reader = new StreamReader(stream.Body);
