@@ -145,7 +145,7 @@ namespace AspireGrpcService.Services
             // Aspire application only deployed to single pod using AZD
             if (pods.Items.Count > 1)
             {
-                _logger.LogWarning($"Expected only one pod to match label {label} but found {pods.Items.Count}");
+                _logger.LogWarning($"Expected only one pod to match label {label} but found {pods.Items.Count} pods.");
             }
 
             var pod = pods.Items[0];
