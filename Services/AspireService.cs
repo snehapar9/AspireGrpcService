@@ -140,35 +140,35 @@ namespace AspireGrpcService.Services
         {
             var label = $"containerapps.io/app-name={request.ResourceName}";
             _logger.LogInformation($"Label : {label}");
-            var podsWatchResponse = await _kubernetesClient.CoreV1.ListNamespacedPodWithHttpMessagesAsync(_kubernetesConfig.Namespace, watch: true, labelSelector: label);
+            var pods = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace, labelSelector: label);
             while (!context.CancellationToken.IsCancellationRequested)
             {
-                var podWatcher = podsWatchResponse.Watch<V1Pod, V1PodList>(async (type, item) =>
+                // Aspire application only deployed to single pod using AZD
+                if (pods.Items.Count > 1)
                 {
-                    Console.WriteLine($"Pod event of type {type} detected for {item.Metadata.Name}");
-                    if (type.Equals(WatchEventType.Added) || type.Equals(WatchEventType.Modified) || type.Equals(WatchEventType.Error) || type.Equals(WatchEventType.Deleted))
-                    {
-                        var startTimeSecond = DateTime.Now.Second == 0 ? DateTime.Now.AddSeconds(1).Second : DateTime.Now.Second;
-                        var container = item.Spec.Containers.Where(c => c.Name.Equals(request.ResourceName)).FirstOrDefault();
-                        // Container's name is the app's name (Verified by deploying an aspire app from AZD).
-                        if (container == null)
-                        {
-                            _logger.LogError($"Container with name {request.ResourceName} is not found.");
-                            return;
-                        }
-                        var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogWithHttpMessagesAsync(item.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, sinceSeconds: startTimeSecond);
-                        var logsUpdate = new WatchResourceConsoleLogsUpdate();
-                        var reader = new StreamReader(stream.Body, leaveOpen: true);
-                        while (!reader.EndOfStream)
-                        {
-                            var logEntry = await reader.ReadLineAsync();
-                            logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logEntry });
-                        }
+                    _logger.LogWarning($"Expected only one pod to match label {label} but found {pods.Items.Count}");
+                }
 
-                        await responseStream.WriteAsync(logsUpdate);
-                        await Task.Delay(1000);
-                    }
-                });
+                var pod = pods.Items[0];
+                var container = pod.Spec.Containers.Where(c => c.Name.Equals(request.ResourceName)).FirstOrDefault();
+
+                // Container's name is the app's name (Verified by deploying an aspire app from AZD).
+                if (container == null)
+                {
+                    _logger.LogError($"Container with name {request.ResourceName} is not found.");
+                    return;
+                }
+                var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogWithHttpMessagesAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name);
+                var logsUpdate = new WatchResourceConsoleLogsUpdate();
+                var reader = new StreamReader(stream.Body);
+                while (!reader.EndOfStream)
+                {
+                    var logEntry = await reader.ReadLineAsync();
+                    logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logEntry });
+                }
+
+                await responseStream.WriteAsync(logsUpdate);
+                await Task.Delay(1000);
             }
         }
 
