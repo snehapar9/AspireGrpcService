@@ -32,10 +32,12 @@ namespace AspireGrpcService.Services
 
         public override async Task<ApplicationInformationResponse> GetApplicationInformation(ApplicationInformationRequest request, ServerCallContext context)
         {
-            // TODO - Confirm if we can use "tags" to identity Aspire Apps in ACA.
+            var billingSecret = await _kubernetesClient.CoreV1.ReadNamespacedSecretAsync("billing", "k8se-system");
+            billingSecret.Data.TryGetValue("KubeEnvironmentId", out byte[]? kubeEnvironmentId);
+            var kubeEnvironmentName = kubeEnvironmentId != null ? Encoding.UTF8.GetString(kubeEnvironmentId).Split('/').Last() : null;
             var response = new ApplicationInformationResponse
             {
-                ApplicationName = "My App"
+                ApplicationName = kubeEnvironmentName
             };
             return response;
         }
@@ -200,7 +202,7 @@ namespace AspireGrpcService.Services
             }
             resource.Endpoints.Add(endpoints);
 
-            var environmentVariables = container.Env.Select(envVar => new EnvironmentVariable() { Name = envVar.Name, Value = envVar.Value ?? (envVar.ValueFrom?.ConfigMapKeyRef != null ? "<FROM CONFIGMAP>" : "<OTHER>" ) });
+            var environmentVariables = container.Env.Select(envVar => new EnvironmentVariable() { Name = envVar.Name, Value = envVar.Value ?? (envVar.ValueFrom?.ConfigMapKeyRef != null ? "<FROM CONFIGMAP>" : "<OTHER>") });
             if (environmentVariables != null)
             {
                 resource.Environment.Add(environmentVariables);
@@ -231,20 +233,19 @@ namespace AspireGrpcService.Services
                 return;
             }
 
-            while (!context.CancellationToken.IsCancellationRequested)
-            {
-                var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogWithHttpMessagesAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name);
-                var logsUpdate = new WatchResourceConsoleLogsUpdate();
-                var reader = new StreamReader(stream.Body);
-                while (!reader.EndOfStream)
-                {
-                    var logEntry = await reader.ReadLineAsync();
-                    logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logEntry });
-                }
 
-                await responseStream.WriteAsync(logsUpdate);
-                await Task.Delay(1000);
+            var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, follow: true);
+            var logsUpdate = new WatchResourceConsoleLogsUpdate();
+            var reader = new StreamReader(stream);
+            while (!reader.EndOfStream)
+            {
+                var logEntry = await reader.ReadLineAsync();
+                logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logEntry });
             }
+
+            await responseStream.WriteAsync(logsUpdate);
+            await Task.Delay(1000);
+
         }
 
         public override async Task<ResourceCommandResponse> ExecuteResourceCommand(ResourceCommandRequest request, ServerCallContext context)
