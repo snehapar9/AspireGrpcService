@@ -233,18 +233,21 @@ namespace AspireGrpcService.Services
                 return;
             }
 
-
-            var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, follow: true);
-            var logsUpdate = new WatchResourceConsoleLogsUpdate();
-            var reader = new StreamReader(stream);
-            while (!reader.EndOfStream)
+            // Stream recent logs and keep connection open until cancellation token is requested by setting `follow` to true
+            using (var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, follow: true, tailLines: 100))
             {
-                var logEntry = await reader.ReadLineAsync();
-                logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logEntry });
+                using (var reader = new StreamReader(stream))
+                {
+                    while (!reader.EndOfStream)
+                    {
+                        var logLine = await reader.ReadLineAsync();
+                        var logsUpdate = new WatchResourceConsoleLogsUpdate();
+                        logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logLine });
+                        await Task.Delay(1000);
+                        await responseStream.WriteAsync(logsUpdate);
+                    }
+                }
             }
-
-            await responseStream.WriteAsync(logsUpdate);
-            await Task.Delay(1000);
 
         }
 
