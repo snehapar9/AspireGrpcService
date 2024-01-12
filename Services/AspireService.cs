@@ -234,7 +234,7 @@ namespace AspireGrpcService.Services
             }
 
             // Stream recent logs and keep connection open until cancellation token is requested by setting `follow` to true
-            using (var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, follow: true, tailLines: 100))
+            using (var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, follow: true))
             {
                 using (var reader = new StreamReader(stream))
                 {
