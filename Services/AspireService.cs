@@ -8,6 +8,7 @@ using k8s.KubeConfigModels;
 using k8s.Models;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
+using Prometheus;
 using System.ComponentModel;
 using System.Reflection.PortableExecutable;
 using System.Text;
@@ -213,7 +214,7 @@ namespace AspireGrpcService.Services
 
         public override async Task WatchResourceConsoleLogs(WatchResourceConsoleLogsRequest request, IServerStreamWriter<WatchResourceConsoleLogsUpdate> responseStream, ServerCallContext context)
         {
-            var label = $"containerapps.io/app-name={request.ResourceName}";
+            var label = $"app=grpc-service";
             _logger.LogInformation($"Label : {label}");
             var pods = await _kubernetesClient.CoreV1.ListNamespacedPodAsync(_kubernetesConfig.Namespace, labelSelector: label);
 
@@ -224,27 +225,48 @@ namespace AspireGrpcService.Services
             }
 
             var pod = pods.Items[0];
-            var container = pod.Spec.Containers.FirstOrDefault(container => container.Env.Any(envVar => envVar.Name == "CONTAINER_APP_NAME" && envVar.Value == request.ResourceName));
+            //var container = pod.Spec.Containers.FirstOrDefault(container => container.Env.Any(envVar => envVar.Name == "CONTAINER_APP_NAME" && envVar.Value == request.ResourceName));
 
-            // Container's name is the app's name (Verified by deploying an aspire app from AZD).
-            if (container == null)
-            {
-                _logger.LogError($"Container with name {request.ResourceName} is not found.");
-                return;
-            }
+            //// Container's name is the app's name (Verified by deploying an aspire app from AZD).
+            //if (container == null)
+            //{
+            //    _logger.LogError($"Container with name {request.ResourceName} is not found.");
+            //    return;
+            //}
 
             // Stream recent logs and keep connection open until cancellation token is requested by setting `follow` to true
-            using (var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: container.Name, follow: true))
-            {
+            using (var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: "grpc-service-container", follow:true, cancellationToken: context.CancellationToken))
+            { 
                 using (var reader = new StreamReader(stream))
                 {
-                    while (!reader.EndOfStream)
+                    int count = 0;
+
+                    while (!reader.EndOfStream && !context.CancellationToken.IsCancellationRequested)
                     {
-                        var logLine = await reader.ReadLineAsync();
+                        // var logLine = await reader.ReadLineAsync(context.CancellationToken);
+                        var logLine = await reader.ReadToEndAsync(context.CancellationToken);
+
+                        if (context.CancellationToken.IsCancellationRequested)
+                        {
+                            // Break out of the loop if cancellation token is requested
+                            _logger.LogWarning($"Break out of this loop");
+                            break;
+                        }
+
+                        if (logLine == null)
+                        {
+                            break;
+                        }
+
                         var logsUpdate = new WatchResourceConsoleLogsUpdate();
                         logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logLine });
-                        await Task.Delay(1000);
-                        await responseStream.WriteAsync(logsUpdate);
+                        await responseStream.WriteAsync(logsUpdate, context.CancellationToken);
+                        // LogWarning only 20 times
+                        if (count < 2000)
+                        {
+                            _logger.LogWarning($"Cancellation token : {context.CancellationToken.IsCancellationRequested}");
+                            _logger.LogWarning($"Test - Add logs to pod {count++}");
+                        }
                     }
                 }
             }
@@ -289,6 +311,5 @@ namespace AspireGrpcService.Services
             }
             return response;
         }
-
     }
 }
