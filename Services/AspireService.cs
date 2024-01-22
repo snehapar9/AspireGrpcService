@@ -9,7 +9,9 @@ using k8s.Models;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
 using Prometheus;
+using System;
 using System.ComponentModel;
+using System.Diagnostics.Metrics;
 using System.Reflection.PortableExecutable;
 using System.Text;
 using static Prometheus.Exemplar;
@@ -23,6 +25,7 @@ namespace AspireGrpcService.Services
         private readonly KubernetesClientConfiguration _kubernetesConfig;
         private readonly Kubernetes _kubernetesClient;
         private IServerStreamWriter<WatchResourcesUpdate>? _currentWatchResourcesUpdateStream;
+        private const int MaxLinesPerMessage = 10;
 
         public AspireService(ILogger<AspireService> logger)
         {
@@ -235,42 +238,56 @@ namespace AspireGrpcService.Services
             //}
 
             // Stream recent logs and keep connection open until cancellation token is requested by setting `follow` to true
-            using (var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: "grpc-service-container", follow:true, cancellationToken: context.CancellationToken))
-            { 
+            using (var stream = await _kubernetesClient.CoreV1.ReadNamespacedPodLogAsync(pod.Metadata.Name, _kubernetesConfig.Namespace, container: "grpc-service-container", follow: true, tailLines: 1000, cancellationToken: context.CancellationToken))
+            {
                 using (var reader = new StreamReader(stream))
                 {
                     int count = 0;
-
-                    while (!reader.EndOfStream && !context.CancellationToken.IsCancellationRequested)
+                    // Register a call to Close in the cancellation token's Register method
+                    context.CancellationToken.Register(() =>
                     {
-                        // var logLine = await reader.ReadLineAsync(context.CancellationToken);
-                        var logLine = await reader.ReadToEndAsync(context.CancellationToken);
+                        _logger.LogWarning($"Cancellation token triggered. Closing StreamReader.");
+                        reader.Close();
+                        stream.Close();
+                    });
 
-                        if (context.CancellationToken.IsCancellationRequested)
+                    try
+                    {
+                        while (!reader.EndOfStream)
                         {
-                            // Break out of the loop if cancellation token is requested
-                            _logger.LogWarning($"Break out of this loop");
-                            break;
-                        }
+                            var logsUpdate = new WatchResourceConsoleLogsUpdate();
+                            int linesSent = 0;
 
-                        if (logLine == null)
-                        {
-                            break;
-                        }
+                            // While not end of stream and lines available
+                            while (linesSent <= MaxLinesPerMessage)
+                            {
+                                var logLine = await reader.ReadLineAsync(context.CancellationToken);
+                                logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logLine });
+                                linesSent++;
+                            }
 
-                        var logsUpdate = new WatchResourceConsoleLogsUpdate();
-                        logsUpdate.LogLines.Add(new ConsoleLogLine { Text = logLine });
-                        await responseStream.WriteAsync(logsUpdate, context.CancellationToken);
-                        // LogWarning only 20 times
-                        if (count < 2000)
-                        {
-                            _logger.LogWarning($"Cancellation token : {context.CancellationToken.IsCancellationRequested}");
-                            _logger.LogWarning($"Test - Add logs to pod {count++}");
+                            // Asynchronously write the log update to the response stream
+                            await responseStream.WriteAsync(logsUpdate, context.CancellationToken);
+                            logsUpdate.LogLines.Clear();
+
+                            // LogWarning only 20 times
+                            for( int i = 0; i<1500; i++)
+                            {
+                                _logger.LogWarning($"Test - Add logs to pod {i}");
+                            }
                         }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogWarning("Operation was cancelled.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError($"Error: {ex.Message}");
+                        // Handle other exceptions as needed
                     }
                 }
             }
-
         }
 
         public override async Task<ResourceCommandResponse> ExecuteResourceCommand(ResourceCommandRequest request, ServerCallContext context)
